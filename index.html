@@ -369,15 +369,42 @@
                         <div class="max-w-4xl mx-auto mb-12">
                             <div class="bg-white rounded-xl shadow-lg overflow-hidden">
                                 <div class="relative w-full" style="padding-top: 56.25%"> <!-- 16:9 Aspect Ratio -->
-                                    <video 
-                                        id="demoVideo"
-                                        class="absolute top-0 left-0 w-full h-full object-cover"
-                                        controls
-                                        playsinline
+                                    <div 
+                                        x-data="{ playing: false }"
+                                        class="absolute top-0 left-0 w-full h-full"
                                     >
-                                        <source src="public/Sequence.mp4" type="video/mp4">
-                                        Your browser does not support the video tag.
-                                    </video>
+                                        <video 
+                                            class="absolute top-0 left-0 w-full h-full object-cover"
+                                            x-ref="video"
+                                            playsinline
+                                            @error="console.error('Video error:', $event)"
+                                            @loadeddata="console.log('Video loaded successfully')"
+                                            @ended="playing = false"
+                                        >
+                                            <source src="public/Sequence.mp4" type="video/mp4">
+                                            Your browser does not support the video tag.
+                                        </video>
+                                        
+                                        <!-- Play Button Overlay -->
+                                        <div
+                                            x-show="!playing"
+                                            class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 cursor-pointer hover:bg-opacity-40 transition-opacity"
+                                            @click="playing = true; $refs.video.play()"
+                                        >
+                                            <div class="w-20 h-20 rounded-full bg-white bg-opacity-90 flex items-center justify-center">
+                                                <svg class="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+
+                                        <!-- Pause Overlay -->
+                                        <div
+                                            x-show="playing"
+                                            class="absolute inset-0 cursor-pointer"
+                                            @click="playing = false; $refs.video.pause()"
+                                        ></div>
+                                    </div>
                                 </div>
                                 <div class="p-4 text-center text-sm text-gray-600">
                                     A quick look at how Taxulator works
