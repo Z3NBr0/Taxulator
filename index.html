@@ -5,9 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TaxMate - Simple Tax Calculator for UK Freelancers</title>
     <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script>
+        // Initialize Supabase client
+        const { createClient } = supabase;
+        const supabaseClient = createClient(
+            'https://naqwxvftogtcfyonyybz.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hcXd4dmZ0b2d0Y2Z5b255eWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyOTQ2MzgsImV4cCI6MjA2Mzg3MDYzOH0.16fPoeENjLqBOuNusSixKNRMBO7oI8QsTRGXUE61UjE'
+        );
+
         function taxmate() {
             return {
                 showCalculator: false,
@@ -212,6 +220,8 @@
                 },
 
                 async joinWaitlist() {
+                    console.log('Starting waitlist join process...');
+                    
                     // Input validation
                     if (!this.waitlistEmail || !this.waitlistEmail.includes('@')) {
                         this.waitlistError = 'Please enter a valid email address';
@@ -222,54 +232,52 @@
                     this.waitlistError = '';
 
                     try {
-                        // For testing/development
-                        if (window.location.protocol === 'file:' || window.location.hostname === 'localhost') {
-                            // Simulate API call
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                            
-                            // Simulate success
-                            this.waitlistSuccess = true;
-                            this.waitlistEmail = '';
-                            
-                            // Auto-close modal after 3 seconds
-                            setTimeout(() => {
-                                this.showWaitlist = false;
-                                this.waitlistSuccess = false;
-                            }, 3000);
-                            
-                            return;
+                        console.log('Attempting to insert email:', this.waitlistEmail);
+                        
+                        // First, check if the table exists
+                        const { error: tableCheckError } = await supabaseClient
+                            .from('waitlist')
+                            .select('count')
+                            .limit(1);
+
+                        if (tableCheckError && tableCheckError.code === '42P01') {
+                            // Table doesn't exist, create it
+                            console.log('Table does not exist, creating...');
+                            const { error: createError } = await supabaseClient.rpc('create_waitlist_table');
+                            if (createError) {
+                                console.error('Error creating table:', createError);
+                                throw new Error('Unable to set up waitlist. Please try again in a few minutes.');
+                            }
                         }
 
-                        // Production API call
-                        const response = await fetch('https://naqwxvftogtcfyonyybz.supabase.co/rest/v1/waitlist_emails', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hcXd4dmZ0b2d0Y2Z5b255eWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyOTQ2MzgsImV4cCI6MjA2Mzg3MDYzOH0.16fPoeENjLqBOuNusSixKNRMBO7oI8QsTRGXUE61UjE',
-                                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hcXd4dmZ0b2d0Y2Z5b255eWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgyOTQ2MzgsImV4cCI6MjA2Mzg3MDYzOH0.16fPoeENjLqBOuNusSixKNRMBO7oI8QsTRGXUE61UjE',
-                                'Prefer': 'return=minimal'
-                            },
-                            body: JSON.stringify({
-                                email: this.waitlistEmail.toLowerCase().trim(),
-                                freelancer_type: this.freelancerType || 'Not specified',
-                                signup_date: new Date().toISOString()
-                            })
-                        });
+                        // Now try to insert the email
+                        const { data, error } = await supabaseClient
+                            .from('waitlist')
+                            .insert([
+                                {
+                                    email: this.waitlistEmail.toLowerCase().trim(),
+                                    freelancer_type: this.freelancerType || 'Not specified',
+                                    created_at: new Date().toISOString()
+                                }
+                            ])
+                            .select();
 
-                        if (!response.ok) {
-                            const errorData = await response.json().catch(() => ({}));
-                            console.error('Signup error:', errorData);
+                        console.log('Supabase response:', { data, error });
+
+                        if (error) {
+                            console.error('Supabase error:', error);
                             
-                            if (response.status === 409 || (errorData.message && errorData.message.includes('duplicate'))) {
+                            if (error.code === '23505') {
                                 throw new Error('This email is already on the waitlist!');
-                            } else if (response.status === 400) {
-                                throw new Error('Please enter a valid email address');
+                            } else if (error.code === '42P01') {
+                                throw new Error('Waitlist system is being set up. Please try again in a few minutes.');
                             } else {
-                                throw new Error('Failed to join waitlist. Please try again.');
+                                throw new Error(error.message || 'Failed to join waitlist. Please try again.');
                             }
                         }
 
                         // Success!
+                        console.log('Successfully joined waitlist!');
                         this.waitlistSuccess = true;
                         this.waitlistEmail = '';
                         
@@ -518,33 +526,41 @@
                             Join the waitlist to access Taxulator Pro when it's ready.
                         </p>
 
-                        <form @submit.prevent="joinWaitlist()" class="max-w-md mx-auto">
-                            <div class="flex flex-col sm:flex-row gap-3">
-                                <input 
-                                    type="email" 
-                                    x-model="waitlistEmail"
-                                    placeholder="Enter your email"
-                                    class="flex-1 px-4 py-3 rounded-lg border-2 border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    :class="{'border-red-300': waitlistError}"
-                                >
-                                <button 
+                        <div class="max-w-sm mx-auto">
+                            <form 
+                                @submit.prevent="joinWaitlist"
+                                class="space-y-4"
+                            >
+                                <div class="relative">
+                                    <input 
+                                        type="email" 
+                                        x-model="waitlistEmail"
+                                        placeholder="Enter your email"
+                                        required
+                                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                </div>
+
+                                <button
                                     type="submit"
-                                    class="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-150 disabled:opacity-50"
-                                    :class="{'bg-green-600 hover:bg-green-600': waitlistSuccess}"
-                                    :disabled="waitlistLoading || waitlistSuccess"
+                                    :class="{'opacity-50 cursor-not-allowed': waitlistLoading}"
+                                    :disabled="waitlistLoading"
+                                    class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-150"
                                 >
-                                    <span x-show="!waitlistSuccess">Join Waitlist</span>
-                                    <span x-show="waitlistSuccess">✅ You're on the list!</span>
+                                    <span x-show="!waitlistLoading">Notify Me When It's Live</span>
+                                    <span x-show="waitlistLoading">Adding you to waitlist...</span>
                                 </button>
-                            </div>
-                            <!-- Error Message -->
-                            <div 
-                                x-show="waitlistError" 
-                                x-text="waitlistError"
-                                class="text-red-600 text-sm mt-2"
-                            ></div>
-                            <p class="text-sm text-gray-500 mt-3">No spam. Just helpful updates.</p>
-                        </form>
+
+                                <div x-show="waitlistSuccess" class="text-green-600 text-sm mt-2">
+                                    Thanks for joining! We'll be in touch soon.
+                                </div>
+                                
+                                <div x-show="waitlistError" class="text-red-600 text-sm mt-2" x-text="waitlistError">
+                                </div>
+
+                                <p class="text-gray-500 text-sm mt-4">No spam. Just helpful updates.</p>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -851,56 +867,35 @@
 
                     <!-- Email Form -->
                     <div class="max-w-sm mx-auto">
-                        <form @submit.prevent="joinWaitlist()" class="space-y-4">
+                        <form 
+                            @submit.prevent="joinWaitlist"
+                            class="space-y-4"
+                        >
                             <div class="relative">
                                 <input 
                                     type="email" 
                                     x-model="waitlistEmail"
                                     placeholder="Enter your email"
-                                    :disabled="waitlistLoading || waitlistSuccess"
-                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                    :class="{'border-red-300': waitlistError}"
+                                    required
+                                    class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 >
                             </div>
 
                             <button
                                 type="submit"
-                                class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg transition-colors duration-150 relative"
-                                :class="{
-                                    'hover:bg-blue-700': !waitlistLoading && !waitlistSuccess,
-                                    'bg-green-600 hover:bg-green-600': waitlistSuccess,
-                                    'opacity-75 cursor-not-allowed': waitlistLoading
-                                }"
-                                :disabled="waitlistLoading || waitlistSuccess"
+                                :class="{'opacity-50 cursor-not-allowed': waitlistLoading}"
+                                :disabled="waitlistLoading"
+                                class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-150"
                             >
-                                <!-- Loading Spinner -->
-                                <span x-show="waitlistLoading" class="absolute inset-0 flex items-center justify-center">
-                                    <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                </span>
-                                
-                                <!-- Button Text -->
-                                <span x-show="!waitlistLoading">
-                                    <span x-show="!waitlistSuccess">Notify Me When It's Live</span>
-                                    <span x-show="waitlistSuccess">✅ You're on the list!</span>
-                                </span>
+                                <span x-show="!waitlistLoading">Notify Me When It's Live</span>
+                                <span x-show="waitlistLoading">Adding you to waitlist...</span>
                             </button>
 
-                            <!-- Error Message -->
-                            <div 
-                                x-show="waitlistError" 
-                                x-text="waitlistError"
-                                class="text-red-600 text-sm mt-2"
-                            ></div>
-
-                            <!-- Success Message -->
-                            <div 
-                                x-show="waitlistSuccess" 
-                                class="text-green-600 text-sm mt-2"
-                            >
-                                We'll keep you updated on the launch!
+                            <div x-show="waitlistSuccess" class="text-green-600 text-sm mt-2">
+                                Thanks for joining! We'll be in touch soon.
+                            </div>
+                            
+                            <div x-show="waitlistError" class="text-red-600 text-sm mt-2" x-text="waitlistError">
                             </div>
 
                             <p class="text-gray-500 text-sm mt-4">No spam. Just helpful updates.</p>
